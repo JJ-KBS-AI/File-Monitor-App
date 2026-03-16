@@ -2,22 +2,17 @@ from __future__ import annotations
 
 import os
 import subprocess
-from typing import Optional
-
 from plyer import notification
 import winsound
 
-from .config import DEFAULT_SOUND_FILE, NOTIFICATION_MESSAGES, NOTIFICATION_TITLE
+from .config import NOTIFICATION_MESSAGES, NOTIFICATION_TITLE, SOUND_COMPLETE, SOUND_START
 from .models import MonitoredFile
 
 
-def _play_sound(sound_file: Optional[str]) -> None:
+def _play_sound(path: str) -> None:
     try:
-        sf = sound_file or ""
-        if not sf and os.path.exists(DEFAULT_SOUND_FILE):
-            sf = DEFAULT_SOUND_FILE
-        if sf and os.path.exists(sf):
-            winsound.PlaySound(sf, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        if path and os.path.exists(path):
+            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
         else:
             winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
     except Exception as e:  # pragma: no cover - 시스템 의존
@@ -59,16 +54,16 @@ def _notify_toast(title: str, body: str) -> None:
         print(f"대체 알림도 실패: {e2}")
 
 
-def notify_started(file: MonitoredFile, sound_file: Optional[str] = None) -> None:
+def notify_started(file: MonitoredFile) -> None:
     msg = NOTIFICATION_MESSAGES["started"]
     body = f"{file.name}\n{msg}"
     _notify_toast(NOTIFICATION_TITLE, body)
-    _play_sound(sound_file)
+    _play_sound(SOUND_START)
 
 
-def notify_completed(file: MonitoredFile, sound_file: Optional[str] = None) -> None:
+def notify_completed(file: MonitoredFile) -> None:
     msg = NOTIFICATION_MESSAGES["completed"]
     body = f"{file.name}\n{msg}"
     _notify_toast(NOTIFICATION_TITLE, body)
-    _play_sound(sound_file)
+    _play_sound(SOUND_COMPLETE)
 
