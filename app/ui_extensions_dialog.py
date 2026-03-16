@@ -1,10 +1,10 @@
-"""확장자 관리 다이얼로그: 아이콘 스타일 토글 + KBS CI 적용."""
+"""확장자 관리 다이얼로그: 단일 리스트(기본/추가 통합) 관리."""
 from __future__ import annotations
 
 from PyQt5.QtCore import QEvent, Qt, QTimer
+from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -17,10 +17,10 @@ from PyQt5.QtWidgets import (
 )
 
 from .config import DEFAULT_WATCH_EXTENSIONS
-from .styles import KBS_BLUE, KBS_GREY_DARK, get_extension_toggle_stylesheet
+from .styles import KBS_BLUE, KBS_GREY_DARK, KBS_GREY_LIGHT
 
 
-COLS = 4  # 확장자 토글 그리드 열 개수
+COLS = 3
 
 
 def _normalize_ext(ext: str) -> str:
@@ -42,6 +42,11 @@ def _dialog_stylesheet() -> str:
         font-size: 13px;
         font-weight: 500;
     }}
+    QLabel#sectionTitle {{
+        font-family: "KBS_CI", "Segoe UI", "Malgun Gothic", sans-serif;
+        font-size: 16px;
+        font-weight: 700;
+    }}
     QLineEdit {{
         background-color: white;
         border: 1px solid #E0E0E0;
@@ -57,7 +62,7 @@ def _dialog_stylesheet() -> str:
         color: white;
         border: none;
         border-radius: 6px;
-        padding: 8px 20px;
+        padding: 0px 16px;
         font-size: 13px;
         font-weight: 500;
     }}
@@ -65,150 +70,162 @@ def _dialog_stylesheet() -> str:
         background-color: #4DA3D1;
     }}
     QPushButton#delBtn {{
-        background-color: rgba(200, 60, 60, 0.9);
+        background-color: rgba(200, 60, 60, 0.92);
         color: white;
         border: none;
-        border-radius: 10px;
-        font-size: 12px;
-        font-weight: bold;
+        border-radius: 9px;
+        padding: 0px;
     }}
     QPushButton#delBtn:hover {{
         background-color: rgba(220, 80, 80, 1);
+    }}
+    QPushButton#extToggleBtn {{
+        background-color: white;
+        color: #5A5A5A;
+        border: 1px solid {KBS_GREY_LIGHT};
+        border-radius: 10px;
+        padding: 5px 10px;
+        font-size: 12px;
+        min-height: 30px;
+    }}
+    QPushButton#extToggleBtn:hover {{
+        border-color: {KBS_BLUE};
+        color: {KBS_BLUE};
+    }}
+    QPushButton#extToggleBtn:checked {{
+        background-color: {KBS_BLUE};
+        color: white;
+        border-color: {KBS_BLUE};
+        font-weight: 600;
+    }}
+    QPushButton#extToggleBtn:checked:hover {{
+        background-color: #4DA3D1;
+        border-color: #4DA3D1;
+    }}
+    QWidget#listFrame {{
+        border: 1px solid #DDE3EB;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.55);
+    }}
+    QPushButton#okBtn, QPushButton#cancelBtn {{
+        min-height: 38px;
+        font-size: 13px;
+        border-radius: 6px;
     }}
     """
 
 
 class ExtensionItemWidget(QWidget):
-    """토글 버튼 + 삭제(X) 버튼을 담는 위젯. 레이아웃 기반으로 안정적 동작."""
+    """토글 + 삭제(X) 한 쌍."""
 
-    def __init__(
-        self,
-        ext: str,
-        checked: bool,
-        on_toggle,
-        on_delete,
-        toggle_stylesheet: str,
-        defer_delete: bool = False,
-    ):
+    def __init__(self, ext: str, checked: bool, on_toggle, on_delete):
         super().__init__()
-        self.ext = ext
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
         self.toggle_btn = QPushButton(ext)
+        self.toggle_btn.setObjectName("extToggleBtn")
         self.toggle_btn.setCheckable(True)
         self.toggle_btn.setChecked(checked)
         self.toggle_btn.setCursor(Qt.PointingHandCursor)
-        self.toggle_btn.setStyleSheet(toggle_stylesheet)
         self.toggle_btn.toggled.connect(on_toggle)
 
         del_btn = QPushButton("✕")
         del_btn.setObjectName("delBtn")
-        del_btn.setFixedSize(28, 28)
+        del_btn.setFixedSize(24, 24)
+        del_btn.setFont(QFont("Segoe UI", 10, QFont.Bold))
         del_btn.setCursor(Qt.PointingHandCursor)
         del_btn.setFocusPolicy(Qt.NoFocus)
-        if defer_delete:
-            del_btn.clicked.connect(lambda: QTimer.singleShot(0, on_delete))
-        else:
-            del_btn.clicked.connect(on_delete)
+        del_btn.clicked.connect(lambda: QTimer.singleShot(0, on_delete))
 
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(4)
+        row.setSpacing(6)
         row.addWidget(self.toggle_btn, 1)
-        row.addWidget(del_btn, 0)
+        row.addWidget(del_btn, 0, Qt.AlignVCenter)
 
     def setChecked(self, checked: bool) -> None:
         self.toggle_btn.setChecked(checked)
 
 
 class ExtensionsDialog(QDialog):
-    """감시할 확장자를 아이콘 스타일 토글로 관리하는 다이얼로그. KBS CI 적용."""
+    """감시 확장자 단일 리스트를 편집하는 다이얼로그."""
 
     def __init__(self, initial_extensions: set[str], parent=None):
         super().__init__(parent)
         self.setWindowTitle("감시할 확장자 관리")
-        self.resize(480, 420)
+        self.resize(560, 430)
         self.setStyleSheet(_dialog_stylesheet())
 
-        self._result: set[str] = set(initial_extensions)
-        self._example_items: dict[str, ExtensionItemWidget] = {}
-        self._custom_items: dict[str, ExtensionItemWidget] = {}
-        self._toggle_stylesheet = get_extension_toggle_stylesheet()
+        self._result: set[str] = set(initial_extensions) or set(DEFAULT_WATCH_EXTENSIONS)
+        self._items: dict[str, ExtensionItemWidget] = {}
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        # 예시 확장자 - 토글 + 삭제
-        layout.addWidget(QLabel("예시 확장자 (클릭 시 선택/제외, ✕로 리스트에서 제거):"))
+        title = QLabel("감시 확장자 (토글=포함/제외, ✕=리스트 삭제):")
+        title.setObjectName("sectionTitle")
+        layout.addWidget(title)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        example_widget = QWidget()
-        example_layout = QGridLayout(example_widget)
-        example_layout.setSpacing(10)
-        for i, ext in enumerate(DEFAULT_WATCH_EXTENSIONS):
-            item = self._create_extension_item(
-                ext, ext in self._result,
-                lambda checked, e=ext: self._on_toggle(e, checked),
-                lambda e=ext: self._on_delete_example(e),
-            )
-            example_layout.addWidget(item, i // COLS, i % COLS)
-            self._example_items[ext] = item
-        scroll.setWidget(example_widget)
+        list_widget = QWidget()
+        list_widget.setObjectName("listFrame")
+        self.list_layout = QGridLayout(list_widget)
+        self.list_layout.setHorizontalSpacing(12)
+        self.list_layout.setVerticalSpacing(10)
+        self.list_layout.setContentsMargins(12, 12, 12, 12)
+        scroll.setWidget(list_widget)
         layout.addWidget(scroll)
 
-        # 직접 추가
-        layout.addWidget(QLabel("예시에 없는 경우 직접 추가:"))
+        for ext in sorted(self._result):
+            self._insert_item(ext, checked=True)
+
+        add_title = QLabel("예시에 없는 경우 직접 추가:")
+        add_title.setObjectName("sectionTitle")
+        layout.addWidget(add_title)
         add_row = QHBoxLayout()
         self.ext_input = QLineEdit()
         self.ext_input.setPlaceholderText("예: .webm")
         self.ext_input.installEventFilter(self)
         add_btn = QPushButton("추가")
         add_btn.setObjectName("addBtn")
-        add_btn.clicked.connect(self._add_custom)
-        add_row.addWidget(self.ext_input)
-        add_row.addWidget(add_btn)
+        add_btn.clicked.connect(lambda: QTimer.singleShot(0, self._add_custom))
+        add_btn.setFixedHeight(self.ext_input.sizeHint().height())
+        add_row.addWidget(self.ext_input, 1)
+        add_row.addWidget(add_btn, 0)
         layout.addLayout(add_row)
 
-        # 직접 추가된 확장자
-        self.custom_container = QWidget()
-        self.custom_layout = QGridLayout(self.custom_container)
-        self.custom_layout.setSpacing(10)
-        layout.addWidget(self.custom_container)
-        custom_exts = sorted(e for e in self._result if e not in DEFAULT_WATCH_EXTENSIONS)
-        for i, ext in enumerate(custom_exts):
-            item = self._create_extension_item(
-                ext, True,
-                lambda checked, e=ext: self._on_toggle(e, checked),
-                lambda e=ext: self._on_delete_custom(e),
-                defer_delete=True,
-            )
-            self._custom_layout.addWidget(item, i // COLS, i % COLS)
-            self._custom_items[ext] = item
-
-        # 버튼
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        buttons_row = QHBoxLayout()
+        self.ok_btn = QPushButton("OK")
+        self.ok_btn.setObjectName("okBtn")
+        self.ok_btn.clicked.connect(self.accept)
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setObjectName("cancelBtn")
+        self.cancel_btn.clicked.connect(self.reject)
+        buttons_row.addWidget(self.ok_btn, 1)
+        buttons_row.addWidget(self.cancel_btn, 1)
+        layout.addLayout(buttons_row)
 
     def eventFilter(self, obj, event):
-        """Enter 키가 다이얼로그 기본버튼(OK)으로 전달되지 않도록 처리."""
         if obj is self.ext_input and event.type() == QEvent.KeyPress:
             if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                self._add_custom()
+                QTimer.singleShot(0, self._add_custom)
                 return True
         return super().eventFilter(obj, event)
 
-    def _create_extension_item(
-        self, ext: str, checked: bool, on_toggle, on_delete, defer_delete: bool = False
-    ) -> ExtensionItemWidget:
-        """토글 + 삭제 버튼이 있는 확장자 아이템 생성."""
-        return ExtensionItemWidget(
-            ext, checked, on_toggle, on_delete, self._toggle_stylesheet, defer_delete
+    def _insert_item(self, ext: str, checked: bool) -> None:
+        item = ExtensionItemWidget(
+            ext,
+            checked,
+            lambda state, e=ext: self._on_toggle(e, state),
+            lambda e=ext: self._on_delete(e),
         )
+        idx = len(self._items)
+        self.list_layout.addWidget(item, idx // COLS, idx % COLS)
+        self._items[ext] = item
 
     def _on_toggle(self, ext: str, checked: bool) -> None:
         if checked:
@@ -216,40 +233,31 @@ class ExtensionsDialog(QDialog):
         else:
             self._result.discard(ext)
 
-    def _on_delete_example(self, ext: str) -> None:
-        """예시 확장자 삭제 = 리스트에서 제외."""
+    def _on_delete(self, ext: str) -> None:
         self._result.discard(ext)
-        self._example_items[ext].setChecked(False)
-
-    def _on_delete_custom(self, ext: str) -> None:
-        """직접 추가 확장자 삭제 = 위젯 제거."""
-        self._result.discard(ext)
-        item = self._custom_items.pop(ext, None)
-        if item:
-            item.setParent(None)
-            self._custom_layout.removeWidget(item)
-            item.deleteLater()
+        item = self._items.pop(ext, None)
+        if not item:
+            return
+        self.list_layout.removeWidget(item)
+        item.setParent(None)
+        item.deleteLater()
+        self._reflow_items()
 
     def _add_custom(self) -> None:
-        text = self.ext_input.text()
-        norm = _normalize_ext(text)
+        norm = _normalize_ext(self.ext_input.text())
         if not norm:
             return
-        if norm in DEFAULT_WATCH_EXTENSIONS:
-            self._example_items[norm].setChecked(True)
-        elif norm not in self._custom_items:
+        if norm in self._items:
+            self._items[norm].setChecked(True)
             self._result.add(norm)
-            item = self._create_extension_item(
-                norm, True,
-                lambda checked, e=norm: self._on_toggle(e, checked),
-                lambda e=norm: self._on_delete_custom(e),
-                defer_delete=True,
-            )
-            idx = len(self._custom_items)
-            self._custom_layout.addWidget(item, idx // COLS, idx % COLS)
-            self._custom_items[norm] = item
+        else:
+            self._result.add(norm)
+            self._insert_item(norm, checked=True)
         self.ext_input.clear()
 
+    def _reflow_items(self) -> None:
+        for i, item in enumerate(self._items.values()):
+            self.list_layout.addWidget(item, i // COLS, i % COLS)
+
     def get_extensions(self) -> set[str]:
-        """적용된 확장자 집합 반환."""
         return set(self._result)

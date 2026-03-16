@@ -5,7 +5,11 @@ a = Analysis(
     ['MXFMonitorApp.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('app/assets/sounds/start.wav', 'app/assets/sounds'),
+        ('app/assets/sounds/complete.wav', 'app/assets/sounds'),
+        ('MXFMonitorApp.ico', '.'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

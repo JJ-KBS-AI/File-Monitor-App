@@ -9,6 +9,8 @@ KBS_ORANGE = "#FF9C00"        # rgb(255, 156, 0)
 # 보조 색상
 KBS_BLUE_LIGHT = "#4DA3D1"
 KBS_BLUE_DARK = "#1A6B99"
+KBS_ORANGE_LIGHT = "#FFB133"
+KBS_ORANGE_DARK = "#E58C00"
 KBS_GREY_DARK = "#2C2C2C"
 KBS_GREY_MID = "#5A5A5A"
 KBS_GREY_LIGHT = "#E8E8E8"
@@ -27,20 +29,49 @@ def get_global_stylesheet() -> str:
         color: {KBS_GREY_DARK};
         font-size: 13px;
     }}
+    QLabel#tableTitle {{
+        background-color: transparent;
+        color: {KBS_PURPLE_BLUE};
+        font-family: "KBS_CI", "Segoe UI", "Malgun Gothic", sans-serif;
+        padding: 8px 0 10px 0;
+        border: none;
+        border-bottom: 2px solid {KBS_GREY_GRID};
+        font-size: 22px;
+        font-weight: 700;
+    }}
     QPushButton {{
         background-color: {KBS_BLUE};
         color: white;
         border: none;
-        border-radius: 6px;
+        border-radius: 8px;
         padding: 8px 16px;
         font-size: 13px;
         font-weight: 500;
+        min-height: 42px;
     }}
     QPushButton:hover {{
         background-color: {KBS_BLUE_LIGHT};
     }}
     QPushButton:pressed {{
         background-color: {KBS_BLUE_DARK};
+    }}
+    QPushButton#startMonitorButton {{
+        background-color: {KBS_ORANGE};
+    }}
+    QPushButton#startMonitorButton:hover {{
+        background-color: {KBS_ORANGE_LIGHT};
+    }}
+    QPushButton#startMonitorButton:pressed {{
+        background-color: {KBS_ORANGE_DARK};
+    }}
+    QPushButton#grayActionButton {{
+        background-color: #9A9A9A;
+    }}
+    QPushButton#grayActionButton:hover {{
+        background-color: #A8A8A8;
+    }}
+    QPushButton#grayActionButton:pressed {{
+        background-color: #8A8A8A;
     }}
     QPushButton:disabled {{
         background-color: {KBS_GREY_LIGHT};

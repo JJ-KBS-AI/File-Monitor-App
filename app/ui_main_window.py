@@ -3,17 +3,19 @@ from __future__ import annotations
 import time
 from typing import List
 
-from PyQt5.QtCore import QDateTime, Qt, QTimer
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import QDateTime, QEvent, QPoint, Qt, QTimer
+from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -24,6 +26,7 @@ from .config import (
     DEFAULT_WATCH_EXTENSIONS,
     MAX_STABLE_SECONDS,
     MIN_STABLE_SECONDS,
+    get_resource_path,
 )
 from .monitor import FolderCheckerWorker, MonitorController
 from .notifications import notify_completed, notify_started
@@ -33,112 +36,252 @@ from .ui_extensions_dialog import ExtensionsDialog
 
 
 class MainWindow(QWidget):
-    """
-    파일 입고 모니터링 메인 윈도우.
-    UI를 담당하고, MonitorController/Worker 와 연결한다.
-    """
+    """파일 입고 모니터링 메인 윈도우."""
 
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("파일 입고 모니터링 시스템")
-        self.resize(700, 600)
+        self.setWindowIcon(QIcon(get_resource_path("MXFMonitorApp.ico")))
+        self.resize(980, 660)
 
         self.watch_paths: List[str] = []
         self.start_time: float | None = None
         self._scanner_worker: FolderCheckerWorker | None = None
 
-        # 상태/로직 컨트롤러
         self.monitor = MonitorController(stable_seconds=DEFAULT_STABLE_SECONDS)
         self.monitor.file_started.connect(self.on_file_started)
         self.monitor.file_completed.connect(self.on_file_completed)
         self.monitor.path_status_changed.connect(self.update_path_status)
 
-        # 확장자 상태 (기본값: 예시 확장자 전체)
         self.active_extensions = set(DEFAULT_WATCH_EXTENSIONS)
+        self.interval_seconds = DEFAULT_INTERVAL
+        self.stable_seconds = DEFAULT_STABLE_SECONDS
+        self.is_monitoring = False
+
+        self.help_tooltips_enabled = True
+        self._tooltip_target: QWidget | None = None
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.start_scan)
 
+        self._tooltip_timer = QTimer(self)
+        self._tooltip_timer.setSingleShot(True)
+        self._tooltip_timer.timeout.connect(self._show_delayed_tooltip)
+
         self._build_ui()
 
-    # UI 구성 --------------------------------------------------------------
-
     def _build_ui(self) -> None:
-        self.layout = QVBoxLayout()
+        self.layout = QHBoxLayout()
+        self.layout.setSpacing(14)
 
-        # 경로 테이블
+        # 좌측: 표 영역
+        left_panel = QVBoxLayout()
+        left_panel.setSpacing(10)
+
+        path_title = self._create_table_title("감시 중인 폴더")
+        path_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        left_panel.addWidget(path_title)
+
         self.path_table = QTableWidget(0, 2)
         self.path_table.setShowGrid(True)
         self._apply_table_grid_style(self.path_table)
         self.path_table.setHorizontalHeaderLabels(["경로", "상태"])
-        self.path_table.horizontalHeader().setSectionResizeMode(0, self.path_table.horizontalHeader().Stretch)
-        self.layout.addWidget(QLabel("감시 중인 폴더:"))
-        self.layout.addWidget(self.path_table)
+        self.path_table.horizontalHeader().setSectionResizeMode(
+            0, self.path_table.horizontalHeader().Stretch
+        )
+        left_panel.addWidget(self.path_table, 1)
 
-        path_buttons = QHBoxLayout()
-        for label, handler in [
-            ("+ 폴더 추가", self.add_path),
-            ("- 폴더 삭제", self.remove_selected_paths),
-            ("💾 프리셋 저장", self.save_preset_clicked),
-            ("📂 프리셋 불러오기", self.load_preset_clicked),
-        ]:
-            btn = QPushButton(label)
-            btn.clicked.connect(handler)
-            path_buttons.addWidget(btn)
-        self.layout.addLayout(path_buttons)
-
-        # 감시 주기 / 안정 시간
-        cycle_layout = QHBoxLayout()
-        cycle_layout.addWidget(QLabel("감시 주기 (초):"))
-        self.interval_input = QLineEdit()
-        self.interval_input.setPlaceholderText(f"예: {DEFAULT_INTERVAL}")
-        self.interval_input.setText(str(DEFAULT_INTERVAL))
-        cycle_layout.addWidget(self.interval_input)
-        self.layout.addLayout(cycle_layout)
-
-        stable_layout = QHBoxLayout()
-        stable_layout.addWidget(QLabel("입고 완료 판정 대기시간 (초):"))
-        self.stable_input = QLineEdit()
-        self.stable_input.setPlaceholderText(str(DEFAULT_STABLE_SECONDS))
-        self.stable_input.setText(str(DEFAULT_STABLE_SECONDS))
-        stable_layout.addWidget(self.stable_input)
-        self.layout.addLayout(stable_layout)
-
-        # 확장자 관리 버튼
-        ext_btn = QPushButton("📋 확장자 관리")
-        ext_btn.clicked.connect(self.open_extensions_dialog)
-        self.layout.addWidget(ext_btn)
-
-        # 시작/정지 버튼
-        button_layout = QHBoxLayout()
-        self.start_button = QPushButton("감시 시작")
-        self.stop_button = QPushButton("감시 정지")
-        self.stop_button.setEnabled(False)
-        self.start_button.clicked.connect(self.start_monitoring)
-        self.stop_button.clicked.connect(self.stop_monitoring)
-        button_layout.addWidget(self.start_button)
-        button_layout.addWidget(self.stop_button)
-        self.layout.addLayout(button_layout)
-
-        # 입고 완료 리스트
-        list_control = QHBoxLayout()
-        list_control.addWidget(QLabel("입고 완료된 파일:"))
-        clear_btn = QPushButton("초기화")
-        clear_btn.clicked.connect(self.clear_completed_list)
-        list_control.addWidget(clear_btn)
-        self.layout.addLayout(list_control)
+        completed_title = self._create_table_title("입고 완료된 파일")
+        completed_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        left_panel.addWidget(completed_title)
 
         self.completed_list = QTableWidget(0, 3)
         self.completed_list.setShowGrid(True)
         self._apply_table_grid_style(self.completed_list)
         self.completed_list.setHorizontalHeaderLabels(["파일명", "입고 시각", "상태"])
-        self.completed_list.horizontalHeader().setSectionResizeMode(0, self.completed_list.horizontalHeader().Stretch)
-        self.layout.addWidget(self.completed_list)
+        self.completed_list.horizontalHeader().setSectionResizeMode(
+            0, self.completed_list.horizontalHeader().Stretch
+        )
+        left_panel.addWidget(self.completed_list, 1)
 
+        # 우측: 컨트롤 영역
+        right_panel = QVBoxLayout()
+        right_panel.setSpacing(8)
+
+        control_row = QHBoxLayout()
+        control_row.setSpacing(6)
+
+        self.interval_button = QPushButton()
+        self.interval_button.clicked.connect(self.select_interval_seconds)
+        self.interval_button.setMinimumWidth(140)
+        self.interval_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        control_row.addWidget(self.interval_button, 1)
+
+        self.stable_button = QPushButton()
+        self.stable_button.clicked.connect(self.select_stable_seconds)
+        self.stable_button.setMinimumWidth(140)
+        self.stable_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        control_row.addWidget(self.stable_button, 1)
+
+        right_panel.addLayout(control_row)
+        self._refresh_setting_buttons()
+
+        self.monitor_toggle_button = QPushButton("▶ 감시 시작")
+        self.monitor_toggle_button.setObjectName("startMonitorButton")
+        self.monitor_toggle_button.clicked.connect(self.toggle_monitoring)
+        right_panel.addWidget(self.monitor_toggle_button)
+
+        path_action_row = QHBoxLayout()
+        path_action_row.setSpacing(6)
+
+        self.add_path_button = QPushButton("➕📁 폴더 추가")
+        self.add_path_button.setObjectName("grayActionButton")
+        self.add_path_button.clicked.connect(self.add_path)
+        path_action_row.addWidget(self.add_path_button)
+
+        self.remove_path_button = QPushButton("➖📁 폴더 삭제")
+        self.remove_path_button.setObjectName("grayActionButton")
+        self.remove_path_button.clicked.connect(self.remove_selected_paths)
+        path_action_row.addWidget(self.remove_path_button)
+        right_panel.addLayout(path_action_row)
+
+        manage_row = QHBoxLayout()
+        manage_row.setSpacing(6)
+
+        self.ext_button = QPushButton("🧩 확장자 관리")
+        self.ext_button.clicked.connect(self.open_extensions_dialog)
+        manage_row.addWidget(self.ext_button)
+
+        self.clear_button = QPushButton("🧹 목록 초기화")
+        self.clear_button.clicked.connect(self.clear_completed_list)
+        manage_row.addWidget(self.clear_button)
+        right_panel.addLayout(manage_row)
+
+        right_panel.addStretch()
+
+        self.help_toggle_button = QPushButton("❓ 도움말 ON")
+        self.help_toggle_button.setObjectName("helpToggleButton")
+        self.help_toggle_button.setCheckable(True)
+        self.help_toggle_button.setChecked(True)
+        self.help_toggle_button.clicked.connect(self.toggle_help_tooltips)
+        right_panel.addWidget(self.help_toggle_button)
+
+        self.save_preset_button = QPushButton("💾 프리셋 저장")
+        self.save_preset_button.clicked.connect(self.save_preset_clicked)
+        right_panel.addWidget(self.save_preset_button)
+
+        self.load_preset_button = QPushButton("📂 프리셋 불러오기")
+        self.load_preset_button.clicked.connect(self.load_preset_clicked)
+        right_panel.addWidget(self.load_preset_button)
+
+        left_container = QWidget()
+        left_container.setLayout(left_panel)
+        left_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        right_container = QWidget()
+        right_container.setLayout(right_panel)
+        right_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        right_container.setFixedWidth(360)
+
+        self.layout.addWidget(left_container, 1)
+        self.layout.addWidget(right_container, 0)
         self.setLayout(self.layout)
 
+        self._setup_button_tooltips()
+
+    def _create_table_title(self, text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("tableTitle")
+        label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        return label
+
+    def _refresh_setting_buttons(self) -> None:
+        self.interval_button.setText(f"주기 {self.interval_seconds}초")
+        self.stable_button.setText(f"대기 {self.stable_seconds}초")
+
+    def toggle_help_tooltips(self, checked: bool) -> None:
+        self.help_tooltips_enabled = checked
+        self.help_toggle_button.setText("❓ 도움말 ON" if checked else "❓ 도움말 OFF")
+        if not checked:
+            self._tooltip_target = None
+            self._tooltip_timer.stop()
+            QToolTip.hideText()
+
+    def _setup_button_tooltips(self) -> None:
+        self.help_toggle_button.setToolTip("버튼별 기능 안내를 받고 싶으면 클릭하세요.")
+        button_tips = {
+            self.monitor_toggle_button: "클릭하면 감시 시작/정지가 전환됩니다.",
+            self.add_path_button: "감시할 폴더를 추가합니다.",
+            self.remove_path_button: "선택한 폴더를 목록에서 삭제합니다.",
+            self.interval_button: "감시 주기(초)를 설정합니다.",
+            self.stable_button: "입고 완료 판정 대기시간(초)를 설정합니다.",
+            self.ext_button: "감시할 확장자 목록을 편집합니다.",
+            self.clear_button: "입고 완료 목록을 비웁니다.",
+            self.save_preset_button: "감시 폴더 경로, 확장자 목록, 감시 주기를 프리셋에 저장합니다.",
+            self.load_preset_button: "저장된 프리셋을 불러옵니다.",
+        }
+        for button, tip in button_tips.items():
+            button.setToolTip(tip)
+            button.installEventFilter(self)
+        self.help_toggle_button.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if isinstance(obj, QPushButton):
+            if event.type() == QEvent.ToolTip:
+                # 도움말 OFF 시에는 도움말 토글 버튼 외 모든 툴팁 차단
+                if obj is not self.help_toggle_button and not self.help_tooltips_enabled:
+                    return True
+            if event.type() == QEvent.Enter:
+                if obj is self.help_toggle_button or self.help_tooltips_enabled:
+                    self._tooltip_target = obj
+                    self._tooltip_timer.start(1000)
+            elif event.type() in (QEvent.Leave, QEvent.MouseButtonPress):
+                if self._tooltip_target is obj:
+                    self._tooltip_target = None
+                self._tooltip_timer.stop()
+                QToolTip.hideText()
+        return super().eventFilter(obj, event)
+
+    def _show_delayed_tooltip(self) -> None:
+        if self._tooltip_target is None:
+            return
+        text = self._tooltip_target.toolTip()
+        if not text:
+            return
+        pos = self._tooltip_target.mapToGlobal(
+            QPoint(self._tooltip_target.width() // 2, self._tooltip_target.height())
+        )
+        QToolTip.showText(pos, text, self._tooltip_target)
+
+    def select_interval_seconds(self) -> None:
+        value, ok = QInputDialog.getInt(
+            self,
+            "감시 주기 설정",
+            "감시 주기(초):",
+            self.interval_seconds,
+            1,
+            3600,
+            1,
+        )
+        if ok:
+            self.interval_seconds = value
+            self._refresh_setting_buttons()
+
+    def select_stable_seconds(self) -> None:
+        value, ok = QInputDialog.getInt(
+            self,
+            "입고 완료 판정 대기시간 설정",
+            "대기시간(초):",
+            self.stable_seconds,
+            MIN_STABLE_SECONDS,
+            MAX_STABLE_SECONDS,
+            1,
+        )
+        if ok:
+            self.stable_seconds = value
+            self._refresh_setting_buttons()
+
     def _apply_table_grid_style(self, table: QTableWidget) -> None:
-        """테이블 그리드선 스타일 적용 (구분선이 보이도록)."""
         table.setStyleSheet(
             f"QTableWidget {{ background-color: white; border: 1px solid {KBS_GREY_LIGHT}; "
             f"border-radius: 6px; }} "
@@ -148,7 +291,7 @@ class MainWindow(QWidget):
             f"padding: 10px; font-weight: 600; border: 1px solid {KBS_GREY_GRID}; }}"
         )
 
-    # 확장자 관련 ----------------------------------------------------------
+    # 확장자 ---------------------------------------------------------------
 
     def open_extensions_dialog(self) -> None:
         dlg = ExtensionsDialog(self.active_extensions, self)
@@ -185,12 +328,10 @@ class MainWindow(QWidget):
                 break
 
     def save_preset_clicked(self) -> None:
-        raw = self.interval_input.text()
-        interval = int(raw) if raw.isdigit() else DEFAULT_INTERVAL
         preset = PresetData(
             paths=list(self.watch_paths),
             extensions=list(self.active_extensions),
-            interval=interval,
+            interval=self.interval_seconds,
         )
         save_preset(preset)
         QMessageBox.information(self, "저장됨", "프리셋이 저장되었습니다.")
@@ -201,8 +342,11 @@ class MainWindow(QWidget):
             QMessageBox.warning(self, "없음", "프리셋 파일이 없습니다.")
             return
         self.watch_paths = list(data.paths)
-        self.active_extensions = set(data.extensions) if data.extensions else set(DEFAULT_WATCH_EXTENSIONS)
-        self.interval_input.setText(str(data.interval))
+        self.active_extensions = (
+            set(data.extensions) if data.extensions else set(DEFAULT_WATCH_EXTENSIONS)
+        )
+        self.interval_seconds = int(data.interval)
+        self._refresh_setting_buttons()
 
         self.path_table.setRowCount(0)
         for path in self.watch_paths:
@@ -214,29 +358,29 @@ class MainWindow(QWidget):
 
     # 감시 시작/정지 -------------------------------------------------------
 
+    def toggle_monitoring(self) -> None:
+        if self.is_monitoring:
+            self.stop_monitoring()
+        else:
+            self.start_monitoring()
+
     def start_monitoring(self) -> None:
         if not self.watch_paths:
-            QMessageBox.warning(self, "경고", "감시할 폴더를 하나 이상 추가하세요.")
+            self._show_center_warning("경고", "감시할 폴더를 하나 이상 추가하세요.")
             return
         self.start_time = time.time()
-        try:
-            interval = max(1, int(self.interval_input.text()))
-        except ValueError:
-            QMessageBox.warning(self, "오류", "감시 주기는 숫자로 입력해야 합니다.")
-            return
-
-        try:
-            stable_seconds = int(self.stable_input.text())
-        except ValueError:
-            stable_seconds = DEFAULT_STABLE_SECONDS
-        stable_seconds = max(MIN_STABLE_SECONDS, min(MAX_STABLE_SECONDS, stable_seconds))
+        interval = max(1, self.interval_seconds)
+        stable_seconds = max(MIN_STABLE_SECONDS, min(MAX_STABLE_SECONDS, self.stable_seconds))
         self.monitor.reset(stable_seconds)
 
         self.completed_list.setRowCount(0)
-
         self._start_timer(interval)
-        self.start_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
+
+        self.is_monitoring = True
+        self.monitor_toggle_button.setText("⏹ 감시 정지")
+        self.interval_button.setEnabled(False)
+        self.stable_button.setEnabled(False)
+
         QMessageBox.information(self, "알림", "감시를 시작합니다.")
         for path in self.watch_paths:
             self.update_path_status(path, "감시 중")
@@ -248,21 +392,29 @@ class MainWindow(QWidget):
 
     def stop_monitoring(self) -> None:
         self.timer.stop()
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
+        self.is_monitoring = False
+        self.monitor_toggle_button.setText("▶ 감시 시작")
+        self.interval_button.setEnabled(True)
+        self.stable_button.setEnabled(True)
         QMessageBox.information(self, "알림", "감시를 중지했습니다.")
         for path in self.watch_paths:
             self.update_path_status(path, "중지됨")
+
+    def _show_center_warning(self, title: str, message: str) -> None:
+        """경고창 문구/버튼 정렬을 일정하게 보여준다."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle(title)
+        box.setText(f"<div style='text-align:center; min-width:260px;'>{message}</div>")
+        box.setStandardButtons(QMessageBox.Ok)
+        box.exec_()
 
     def start_scan(self) -> None:
         if not self.watch_paths or not self.active_extensions:
             return
         if self._scanner_worker is not None and self._scanner_worker.isRunning():
             return
-        self._scanner_worker = FolderCheckerWorker(
-            self.watch_paths,
-            list(self.active_extensions),
-        )
+        self._scanner_worker = FolderCheckerWorker(self.watch_paths, list(self.active_extensions))
         self._scanner_worker.files_found.connect(self.on_scan_result)
         self._scanner_worker.start()
 
@@ -271,30 +423,26 @@ class MainWindow(QWidget):
             return
         self.monitor.process_scan_results(results, self.start_time)
 
-    # 파일 이벤트 핸들러 ---------------------------------------------------
+    # 파일 이벤트 ----------------------------------------------------------
 
     def on_file_started(self, mf) -> None:
-        """MonitorController 가 파일 입고 시작을 통지하면 테이블에 반영하고 알림."""
         row = self.completed_list.rowCount()
         self.completed_list.insertRow(row)
-        self.completed_list.setItem(row, 0, QTableWidgetItem(mf.name))
+        self.completed_list.setItem(row, 0, QTableWidgetItem(mf.path))
         self.completed_list.setItem(
             row,
             1,
-            QTableWidgetItem(
-                QDateTime.currentDateTime().toString("MM월 dd일 (ddd) HH:mm:ss")
-            ),
+            QTableWidgetItem(QDateTime.currentDateTime().toString("MM월 dd일 (ddd) HH:mm:ss")),
         )
         self.completed_list.setItem(row, 2, QTableWidgetItem("입고 중"))
         mf.row_index = row
         notify_started(mf)
 
     def on_file_completed(self, mf) -> None:
-        """입고 완료 이벤트가 발생하면 상태/스타일/알림 처리."""
         row = mf.row_index if mf.row_index is not None else self.completed_list.rowCount()
         if row == self.completed_list.rowCount():
             self.completed_list.insertRow(row)
-            self.completed_list.setItem(row, 0, QTableWidgetItem(mf.name))
+            self.completed_list.setItem(row, 0, QTableWidgetItem(mf.path))
             self.completed_list.setItem(
                 row,
                 1,
@@ -308,8 +456,6 @@ class MainWindow(QWidget):
         self.completed_list.setItem(row, 2, status_item)
         mf.row_index = row
         notify_completed(mf)
-
-    # 기타 ---------------------------------------------------------------
 
     def clear_completed_list(self) -> None:
         self.completed_list.setRowCount(0)
