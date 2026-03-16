@@ -6,7 +6,7 @@ from typing import Iterable, List, Sequence, Set, Tuple
 
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
-from .config import DEFAULT_STABLE_SECONDS
+from .config import DEFAULT_STABLE_SECONDS, MIN_STABLE_CHECKS
 from .models import FileStatus, MonitoredFile
 
 ScanResult = Tuple[str, str, str, float, str]  # full_path, watch_path, filename, ctime, ext
@@ -75,6 +75,7 @@ class MonitorController(QObject):
 
             try:
                 size = os.path.getsize(full_path)
+                mtime = os.path.getmtime(full_path)
             except OSError:
                 continue
 
@@ -85,7 +86,9 @@ class MonitorController(QObject):
                     name=filename,
                     watch_root=watch_path,
                     size=size,
+                    last_mtime=mtime,
                     last_changed_at=now,
+                    unchanged_checks=0,
                     status=FileStatus.IN_PROGRESS,
                 )
                 self.files[full_path] = mf
@@ -93,17 +96,23 @@ class MonitorController(QObject):
                 self.file_started.emit(mf)
                 continue
 
-            # 크기 변화가 있으면 진행 중으로 간주
-            if size != mf.size:
+            # 네트워크 복사 환경 오탐 방지를 위해 크기/mtime 모두 추적한다.
+            # 둘 중 하나라도 변하면 아직 입고 진행 중으로 본다.
+            if size != mf.size or mtime != mf.last_mtime:
                 mf.size = size
+                mf.last_mtime = mtime
                 mf.last_changed_at = now
+                mf.unchanged_checks = 0
                 if mf.status is not FileStatus.IN_PROGRESS:
                     mf.status = FileStatus.IN_PROGRESS
                     self.path_status_changed.emit(watch_path, "입고 중")
+            else:
+                mf.unchanged_checks += 1
 
             # 안정 시간이 지났는지 검사
             if (
                 now - mf.last_changed_at >= self.stable_seconds
+                and mf.unchanged_checks >= MIN_STABLE_CHECKS
                 and mf.status is not FileStatus.COMPLETED
             ):
                 mf.status = FileStatus.COMPLETED

@@ -26,7 +26,8 @@ dist/
 *.spec.bak
 
 # Preset (optional - 사용자 설정)
-# mxf_monitor_preset.json
+mxf_monitor_preset.json
+installer/
 
 # OS
 .DS_Store

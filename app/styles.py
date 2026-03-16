@@ -97,6 +97,14 @@ def get_global_stylesheet() -> str:
         border-right: 1px solid {KBS_GREY_GRID};
         border-bottom: 1px solid {KBS_GREY_GRID};
     }}
+    QTableWidget::item:selected {{
+        background-color: #DDEBFA;
+        color: {KBS_GREY_DARK};
+    }}
+    QTableWidget::item:selected:active {{
+        background-color: #DDEBFA;
+        color: {KBS_GREY_DARK};
+    }}
     QHeaderView::section {{
         background-color: {KBS_PURPLE_BLUE};
         color: white;

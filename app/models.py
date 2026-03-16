@@ -20,7 +20,9 @@ class MonitoredFile:
     name: str
     watch_root: str
     size: int = 0
+    last_mtime: float = 0.0
     last_changed_at: float = 0.0
+    unchanged_checks: int = 0
     status: FileStatus = FileStatus.PENDING
     started_notified: bool = False
     completed_notified: bool = False

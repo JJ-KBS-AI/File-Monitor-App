@@ -333,11 +333,27 @@ class MainWindow(QWidget):
             extensions=list(self.active_extensions),
             interval=self.interval_seconds,
         )
-        save_preset(preset)
+        try:
+            save_preset(preset)
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "저장 실패",
+                f"프리셋 저장 중 파일 접근 오류가 발생했습니다.\n{exc}",
+            )
+            return
         QMessageBox.information(self, "저장됨", "프리셋이 저장되었습니다.")
 
     def load_preset_clicked(self) -> None:
-        data = load_preset()
+        try:
+            data = load_preset()
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(
+                self,
+                "불러오기 실패",
+                f"프리셋 파일을 읽는 중 오류가 발생했습니다.\n{exc}",
+            )
+            return
         if data is None:
             QMessageBox.warning(self, "없음", "프리셋 파일이 없습니다.")
             return

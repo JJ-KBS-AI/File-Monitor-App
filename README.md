@@ -1,64 +1,63 @@
 # 파일 입고 모니터링 시스템 (File-Monitor-App)
 
-Windows 환경에서 영상/미디어 파일 입고를 자동 감시하는 PyQt5 기반 데스크톱 앱입니다.
-
-- 새 파일 감지 시: **입고 시작**
-- 파일 크기가 일정 시간 변하지 않으면: **입고 완료**
-- 입고 이벤트마다 토스트 알림 + WAV 사운드 재생
+Windows 환경에서 영상/미디어 파일 입고를 감시하는 PyQt5 기반 데스크톱 앱입니다.  
+방송 제작/후반 작업 환경에서 **새 파일 유입 감지**, **입고 완료 판정**, **토스트+사운드 알림**을 제공합니다.
 
 ---
 
-## 현재 버전 주요 기능
+## 핵심 기능
 
 ### 1) 폴더 감시
-
 - 다중 폴더 감시 지원
-- 폴더 상태 표시: `대기 중`, `감시 중`, `입고 중`, `입고 완료`, `중지됨`
-- 감시 시작/정지 토글 버튼으로 즉시 전환
+- 폴더별 상태 표시: `대기 중`, `감시 중`, `입고 중`, `입고 완료`, `중지됨`
+- 감시 시작/정지를 하나의 토글 버튼(`▶/⏹`)으로 제어
+- 감시 중 설정 버튼 비활성화로 실행 중 값 변경 방지
 
-### 2) 확장자 관리 (단일 리스트 구조)
+### 2) 확장자 관리 다이얼로그
+- 기본/사용자 확장자를 **단일 리스트**로 통합 관리
+- 확장자 토글 버튼으로 포함/제외
+- `✕` 버튼으로 리스트 삭제
+- 직접 입력 + Enter/추가 버튼으로 신규 확장자 등록
+- 3열 그리드 배치로 가독성 향상
 
-- 기본/사용자 추가 구분 없이 **하나의 리스트로 통합 관리**
-- 토글 버튼: 감시 포함/제외
-- `✕` 버튼: 리스트에서 완전 삭제
-- 직접 입력 + Enter 또는 추가 버튼으로 확장자 등록
-- 예시: `.mxf`, `.mov`, `.mp4` (기본값)
-
-### 3) 입고 판정 로직
-
-- 감시 주기(`interval`)마다 스캔
-- 새 파일 발견 시 입고 시작 이벤트 발생
-- 파일 크기 변화가 `stable_seconds` 동안 없으면 입고 완료 처리
+### 3) 입고 판정 로직 (네트워크 스토리지 보강)
+- 감시 주기(`interval`)마다 파일 스캔
+- 신규 파일 감지 시 `입고 시작` 이벤트 발생
+- 완료 판정은 아래 조건을 모두 충족해야 함
+  - `size` 변화 없음
+  - `mtime`(수정 시각) 변화 없음
+  - 안정 시간(`stable_seconds`) 이상 유지
+  - 연속 안정 스캔 횟수(`MIN_STABLE_CHECKS`) 이상
+- 네트워크 공유 스토리지의 일시 정체 구간에서 발생하던 조기 완료 오탐을 완화
 
 ### 4) 알림/사운드
-
-- 시작 알림음: `start.wav`
-- 완료 알림음: `complete.wav`
-- 앱 실행/패키징 환경 모두에서 리소스 경로 자동 처리
+- 입고 시작: `start.wav`
+- 입고 완료: `complete.wav`
+- 개발 실행/패키징 실행 모두에서 리소스 경로 자동 탐색
 
 ### 5) 프리셋 저장/불러오기
+- 저장 항목: 감시 폴더 목록, 확장자 목록, 감시 주기
+- 프리셋 저장 경로를 사용자 쓰기 가능 경로로 변경
+  - `C:\Users\<사용자>\AppData\Local\KBS\MXFMonitorApp\mxf_monitor_preset.json`
+- 구버전 호환: 새 경로가 없으면 기존 상대 경로 프리셋도 로드
+- 저장/불러오기 실패 시 예외 메시지 표시(Freeze 방지)
 
-- JSON 프리셋 저장 항목:
-  - 감시 폴더 목록
-  - 확장자 목록
-  - 감시 주기
-- 버튼 도움말(툴팁)로 저장 항목 안내
-
-### 6) UI/UX 개선 사항
-
-- KBS CI 기반 색상/폰트 적용
-- `KBS_CI` 폰트 우선 사용(없으면 시스템 폰트 폴백)
-- 좌측 리스트(감시 폴더/입고 완료 목록) + 우측 제어 패널 구성
-- 창 확장 시 좌측 리스트 영역 중심으로 확장
-- 버튼 hover 1초 후 도움말 표시 + ON/OFF 토글 지원
+### 6) UI/UX
+- 좌측(감시/완료 테이블) + 우측(제어 패널) 레이아웃
+- KBS CI 색상 적용(보라/블루/오렌지)
+- `KBS_CI.ttf` 폰트 로딩 및 제목 스타일 반영
+- 모든 버튼 라운드 처리
+- 버튼 도움말 1초 지연 표시 + 도움말 ON/OFF 토글(`❓`)
+- 도움말 토글 버튼은 OFF 상태에서도 고정 안내 툴팁 표시
 
 ---
 
 ## 기본 설정값
 
 - 감시 주기 기본값: **30초**
-- 입고 완료 판정 대기시간 기본값: **60초**
-- 대기시간 허용 범위: **10 ~ 300초**
+- 입고 완료 대기시간 기본값: **60초**
+- 완료 대기시간 범위: **10~300초**
+- 최소 안정 스캔 횟수: **3회** (`MIN_STABLE_CHECKS`)
 
 ---
 
@@ -69,9 +68,9 @@ MXFMonitorAppForWin/
   main.py
   MXFMonitorApp.py
   MXFMonitorApp.spec
+  MXFMonitorAppInstaller.iss
   MXFMonitorApp.ico
-  start.wav
-  complete.wav
+  KBS_CI.ttf
   app/
     config.py
     models.py
@@ -85,14 +84,13 @@ MXFMonitorAppForWin/
       sounds/
         start.wav
         complete.wav
-  tests/
   requirements.txt
   requirements-dev.txt
 ```
 
 ---
 
-## 실행 방법
+## 로컬 실행
 
 ```bash
 pip install -r requirements.txt
@@ -110,7 +108,9 @@ pytest
 
 ---
 
-## 패키징 (PyInstaller)
+## 빌드
+
+### 1) 실행 파일(EXE) 빌드
 
 `MXFMonitorApp.spec` 기준으로 빌드합니다.
 
@@ -118,15 +118,25 @@ pytest
 py -m PyInstaller --clean MXFMonitorApp.spec
 ```
 
-빌드 결과:
-
+산출물:
 - `dist/MXFMonitorApp.exe`
 
-스펙 파일에 다음 리소스가 포함됩니다.
-
+포함 리소스:
 - `app/assets/sounds/start.wav`
 - `app/assets/sounds/complete.wav`
 - `MXFMonitorApp.ico`
+- `KBS_CI.ttf`
+
+### 2) 설치 파일(Setup) 빌드
+
+Inno Setup 6 기준:
+
+```bash
+ISCC MXFMonitorAppInstaller.iss
+```
+
+산출물:
+- `installer/MXFMonitorApp_Setup.exe`
 
 ---
 
@@ -136,4 +146,5 @@ py -m PyInstaller --clean MXFMonitorApp.spec
 - PyQt5
 - plyer
 - PyInstaller
+- Inno Setup 6
 - pytest / pytest-qt

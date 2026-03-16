@@ -6,9 +6,10 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('app/assets/sounds/start.wav', 'app/assets/sounds'),
-        ('app/assets/sounds/complete.wav', 'app/assets/sounds'),
+        ('app/assets/sounds/start.wav', 'assets/sounds'),
+        ('app/assets/sounds/complete.wav', 'assets/sounds'),
         ('MXFMonitorApp.ico', '.'),
+        ('KBS_CI.ttf', '.'),
     ],
     hiddenimports=[],
     hookspath=[],
