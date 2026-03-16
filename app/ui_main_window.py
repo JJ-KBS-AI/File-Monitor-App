@@ -40,7 +40,7 @@ class MainWindow(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("파일 입고 모니터링 시스템")
+        self.setWindowTitle("File Monitor App")
         self.setWindowIcon(QIcon(get_resource_path("MXFMonitorApp.ico")))
         self.resize(980, 660)
 
@@ -282,13 +282,18 @@ class MainWindow(QWidget):
             self._refresh_setting_buttons()
 
     def _apply_table_grid_style(self, table: QTableWidget) -> None:
+        # 행 번호(세로 헤더) 가림 현상을 막기 위해 폭/정렬을 명시한다.
+        table.verticalHeader().setMinimumWidth(44)
+        table.verticalHeader().setDefaultAlignment(Qt.AlignCenter)
         table.setStyleSheet(
             f"QTableWidget {{ background-color: white; border: 1px solid {KBS_GREY_LIGHT}; "
             f"border-radius: 6px; }} "
             f"QTableWidget::item {{ border-right: 1px solid {KBS_GREY_GRID}; "
             f"border-bottom: 1px solid {KBS_GREY_GRID}; padding: 6px; }} "
-            f"QHeaderView::section {{ background-color: {KBS_PURPLE_BLUE}; color: white; "
+            f"QHeaderView::section:horizontal {{ background-color: {KBS_PURPLE_BLUE}; color: white; "
             f"padding: 10px; font-weight: 600; border: 1px solid {KBS_GREY_GRID}; }}"
+            f"QHeaderView::section:vertical {{ background-color: {KBS_PURPLE_BLUE}; color: white; "
+            f"padding: 2px; font-weight: 600; border: 1px solid {KBS_GREY_GRID}; text-align: center; }}"
         )
 
     # 확장자 ---------------------------------------------------------------

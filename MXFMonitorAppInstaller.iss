@@ -1,4 +1,4 @@
-#define MyAppName "MXF Monitor App"
+#define MyAppName "File Monitor App"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "KBS"
 #define MyAppExeName "MXFMonitorApp.exe"
